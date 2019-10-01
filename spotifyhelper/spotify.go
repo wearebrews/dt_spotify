@@ -43,14 +43,80 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 	}
 }
 
+const (
+	playCMD = iota
+	pauseCMD
+	toggleCMD
+	nextSongCMD
+	prevSongCMD
+)
+
+type Controller struct {
+	cmd chan int
+}
+
+func (c Controller) Play() {
+	c.cmd <- playCMD
+}
+func (c Controller) Pause() {
+	c.cmd <- pauseCMD
+}
+func (c Controller) Toggle() {
+	c.cmd <- toggleCMD
+}
+func (c Controller) NextSong() {
+	c.cmd <- nextSongCMD
+}
+
+func (c Controller) PrevSong() {
+	c.cmd <- prevSongCMD
+}
+
+func New(ctx context.Context, s *Session) Controller {
+	temp := Controller{
+		cmd: make(chan int),
+	}
+
+	go run(ctx, s.clientChan, temp)
+	return temp
+}
+
+func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
+	client := <-clientChan
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case client = <-clientChan:
+		case cmd := <-c.cmd:
+			switch cmd {
+			case playCMD:
+				client.Play()
+			case pauseCMD:
+				client.Pause()
+			case toggleCMD:
+				state, err := client.PlayerCurrentlyPlaying()
+				if err != nil {
+					logrus.Panic(err)
+				}
+				if state.Playing {
+					client.Pause()
+				} else {
+					client.Play()
+				}
+			case nextSongCMD:
+				client.Next()
+			case prevSongCMD:
+				client.Previous()
+			}
+		}
+	}
+}
+
 func (s *Session) Handler() http.HandlerFunc {
 	return s.handler
 }
 
 func (s *Session) LoginURL() string {
 	return s.url
-}
-
-func (s *Session) Client() <-chan *spotify.Client {
-	return s.clientChan
 }

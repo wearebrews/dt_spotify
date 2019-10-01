@@ -68,9 +68,6 @@ func main() {
 	session := spotifyhelper.NewSession(context.TODO(), spotifyClientID, spotifyClientSecret, redirectURL)
 	//Set up HTTP handler for login session
 	http.HandleFunc(loginPath, session.Handler())
-	//Set up channel for receiving channel
-	clientChan := session.Client()
-
 	//Send login url to start authentication
 	jsonBytes, err := json.Marshal(SlackMessage{session.LoginURL()})
 	if err != nil {
@@ -81,9 +78,11 @@ func main() {
 	//Create DT handler
 	http.HandleFunc("/dtconn", handleDTEvents)
 
+	spotify := spotifyhelper.New(context.TODO(), session)
+
 	//Start
 	ctx := context.Background()
-	go run(ctx, dtEvents, clientChan)
+	go run(ctx, dtEvents, spotify)
 	http.ListenAndServe(":"+hostPort, nil)
 }
 
@@ -104,26 +103,15 @@ func handleDTEvents(w http.ResponseWriter, r *http.Request) {
 	dtEvents <- *event
 }
 
-func run(ctx context.Context, dtEvents chan DTEvent, clientChan <-chan *spotify.Client) {
-	client := <-clientChan
+func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller) {
 	logrus.Info("Application is READY!")
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case client = <-clientChan:
 		case <-dtEvents:
-			playerState, err := client.PlayerState()
-			if err != nil {
-				logrus.Panic(err)
-			}
-			if playerState.CurrentlyPlaying.Playing {
-				client.Pause()
-			} else {
-				client.Play()
-			}
-			//Handle event
+			c.Toggle()
+			logrus.Info("Toggle")
 
 		}
 	}
