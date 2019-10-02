@@ -9,7 +9,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/wearebrews/dt_spotify_controller/spotifyhelper"
-	"github.com/zmb3/spotify"
 	"io/ioutil"
 )
 
@@ -54,6 +53,12 @@ func main() {
 	if !ok {
 		hostPort = "8080"
 	}
+	slackURL, ok := os.LookupEnv("SLACK_URL")
+	if !ok {
+		logrus.Panic("Missing SLACK URL")
+	}
+
+	logrus.Info(slackURL)
 
 	spotifyClientID = spotifyClientID[:len(spotifyClientID)-1]
 	spotifyClientSecret = spotifyClientSecret[:len(spotifyClientSecret)-1]
@@ -73,7 +78,7 @@ func main() {
 	if err != nil {
 		logrus.Panic(err)
 	}
-	http.Post("https://hooks.slack.com/services/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", "application/json", bytes.NewBuffer(jsonBytes))
+	http.Post(slackURL, "application/json", bytes.NewBuffer(jsonBytes))
 
 	//Create DT handler
 	http.HandleFunc("/dtconn", handleDTEvents)

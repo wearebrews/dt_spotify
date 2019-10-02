@@ -61,5 +61,10 @@ spec:
             secretKeyRef:
               name: spotifyclient
               key: secret
+        - name: SLACK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack
+              key: url
         - name: HOST_PORT
           value: "8080"
