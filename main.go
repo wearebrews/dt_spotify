@@ -30,6 +30,11 @@ type DTEvent struct {
 			} `json:"temperature"`
 		} `json:"data"`
 	} `json:"event"`
+	Labels struct {
+		Action   *string `json:"spotify_action"`
+		Song     *string `json:"spotify_song"`
+		Playlist *string `json:"spotify_playlist"`
+	} `json:"labels"`
 }
 
 var dtEvents chan DTEvent
@@ -114,9 +119,21 @@ func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller)
 		select {
 		case <-ctx.Done():
 			return
-		case <-dtEvents:
-			c.Toggle()
-			logrus.Info("Toggle")
+		case event := <-dtEvents:
+			if event.Labels.Action != nil {
+				switch *event.Labels.Action {
+				case "play":
+					c.Play()
+				case "pause":
+					c.Pause()
+				case "toggle":
+					c.Toggle()
+				case "next_song":
+					c.NextSong()
+				case "prev_song":
+					c.PrevSong()
+				}
+			}
 
 		}
 	}

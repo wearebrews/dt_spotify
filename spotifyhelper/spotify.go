@@ -91,16 +91,22 @@ func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
 		case cmd := <-c.cmd:
 			switch cmd {
 			case playCMD:
-				client.Play()
+				if err := client.Play(); err != nil {
+					logrus.Info(err)
+				}
 			case pauseCMD:
-				client.Pause()
+				if err := client.Pause(); err != nil {
+					logrus.Info(err)
+				}
 			case toggleCMD:
-				state, err := client.PlayerCurrentlyPlaying()
+				state, err := client.PlayerState()
 				if err != nil {
 					logrus.Panic(err)
 				}
 				if state.Playing {
-					client.Pause()
+					if err := client.Pause(); err != nil {
+						logrus.Panic(err)
+					}
 				} else {
 					client.Play()
 				}
