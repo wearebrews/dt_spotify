@@ -1,3 +1,4 @@
+COMMIT = $(shell git rev-parse HEAD)
 
 build:
 	go build -o main main.go
@@ -8,6 +9,6 @@ test_local: build
 	python3 tools/local_testing/run.py
 
 docker:
-	docker build -t wearebrews/dtspotify .
+	docker build -t wearebrews/dtspotify:$(COMMIT) .
 docker-push: docker
-	docker push wearebrews/dtspotify
+	docker push wearebrews/dtspotify:$(COMMIT)

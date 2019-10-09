@@ -2,8 +2,10 @@ package spotifyhelper
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
+	"github.com/heptiolabs/healthcheck"
 	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
 	"github.com/zmb3/spotify"
@@ -52,7 +54,8 @@ const (
 )
 
 type Controller struct {
-	cmd chan int
+	cmd    chan int
+	health healthcheck.Handler
 }
 
 func (c Controller) Play() {
@@ -72,9 +75,10 @@ func (c Controller) PrevSong() {
 	c.cmd <- prevSongCMD
 }
 
-func New(ctx context.Context, s *Session) Controller {
+func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
-		cmd: make(chan int),
+		cmd:    make(chan int),
+		health: health,
 	}
 
 	go run(ctx, s.clientChan, temp)
@@ -82,7 +86,14 @@ func New(ctx context.Context, s *Session) Controller {
 }
 
 func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
-	client := <-clientChan
+	var client *spotify.Client
+	c.health.AddReadinessCheck("spotify client ready", func() error {
+		if client == nil {
+			return fmt.Errorf("No spotify client received")
+		}
+		return nil
+	})
+	client = <-clientChan
 	for {
 		select {
 		case <-ctx.Done():
