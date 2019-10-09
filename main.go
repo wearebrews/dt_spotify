@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wearebrews/dt_spotify_controller/spotifyhelper"
+	"github.com/wearebrews/dt_spotify/spotifyhelper"
 	"io/ioutil"
 )
 
