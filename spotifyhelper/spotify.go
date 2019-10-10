@@ -2,8 +2,10 @@ package spotifyhelper
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
+	"github.com/heptiolabs/healthcheck"
 	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
 	"github.com/zmb3/spotify"
@@ -52,7 +54,9 @@ const (
 )
 
 type Controller struct {
-	cmd chan int
+	cmd    chan int
+	song   chan string
+	health healthcheck.Handler
 }
 
 func (c Controller) Play() {
@@ -71,10 +75,15 @@ func (c Controller) NextSong() {
 func (c Controller) PrevSong() {
 	c.cmd <- prevSongCMD
 }
+func (c Controller) PlaySong(song string) {
+	c.song <- song
+}
 
-func New(ctx context.Context, s *Session) Controller {
+func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
-		cmd: make(chan int),
+		cmd:    make(chan int),
+		song:   make(chan string),
+		health: health,
 	}
 
 	go run(ctx, s.clientChan, temp)
@@ -82,7 +91,14 @@ func New(ctx context.Context, s *Session) Controller {
 }
 
 func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
-	client := <-clientChan
+	var client *spotify.Client
+	c.health.AddReadinessCheck("spotify client ready", func() error {
+		if client == nil {
+			return fmt.Errorf("No spotify client received")
+		}
+		return nil
+	})
+	client = <-clientChan
 	for {
 		select {
 		case <-ctx.Done():
@@ -114,6 +130,10 @@ func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
 				client.Next()
 			case prevSongCMD:
 				client.Previous()
+			}
+		case song := <-c.song:
+			if err := client.PlayOpt(&spotify.PlayOptions{URIs: []spotify.URI{spotify.URI(song)}}); err != nil {
+				logrus.Panic(err)
 			}
 		}
 	}

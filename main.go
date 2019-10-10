@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/heptiolabs/healthcheck"
 	"github.com/sirupsen/logrus"
 	"github.com/wearebrews/dt_spotify/spotifyhelper"
 	"io/ioutil"
@@ -63,6 +64,7 @@ func main() {
 		logrus.Panic("Missing SLACK URL")
 	}
 
+	health := healthcheck.NewHandler()
 	logrus.Info(slackURL)
 
 	spotifyClientID = spotifyClientID[:len(spotifyClientID)-1]
@@ -88,11 +90,12 @@ func main() {
 	//Create DT handler
 	http.HandleFunc("/dtconn", handleDTEvents)
 
-	spotify := spotifyhelper.New(context.TODO(), session)
+	spotify := spotifyhelper.New(context.TODO(), session, health)
 
 	//Start
 	ctx := context.Background()
 	go run(ctx, dtEvents, spotify)
+	go http.ListenAndServe("0.0.0.0:8086", health)
 	http.ListenAndServe(":"+hostPort, nil)
 }
 
@@ -132,7 +135,12 @@ func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller)
 					c.NextSong()
 				case "prev_song":
 					c.PrevSong()
+				case "play_song":
+					if event.Labels.Song != nil {
+						c.PlaySong(*event.Labels.Song)
+					}
 				}
+
 			}
 
 		}
