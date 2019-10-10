@@ -55,6 +55,7 @@ const (
 
 type Controller struct {
 	cmd    chan int
+	song   chan string
 	health healthcheck.Handler
 }
 
@@ -74,10 +75,14 @@ func (c Controller) NextSong() {
 func (c Controller) PrevSong() {
 	c.cmd <- prevSongCMD
 }
+func (c Controller) PlaySong(song string) {
+	c.song <- song
+}
 
 func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
 		cmd:    make(chan int),
+		song:   make(chan string),
 		health: health,
 	}
 
@@ -125,6 +130,10 @@ func run(ctx context.Context, clientChan <-chan *spotify.Client, c Controller) {
 				client.Next()
 			case prevSongCMD:
 				client.Previous()
+			}
+		case song := <-c.song:
+			if err := client.PlayOpt(&spotify.PlayOptions{URIs: []spotify.URI{spotify.URI(song)}}); err != nil {
+				logrus.Panic(err)
 			}
 		}
 	}

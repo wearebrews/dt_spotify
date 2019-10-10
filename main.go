@@ -135,7 +135,12 @@ func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller)
 					c.NextSong()
 				case "prev_song":
 					c.PrevSong()
+				case "play_song":
+					if event.Labels.Song != nil {
+						c.PlaySong(*event.Labels.Song)
+					}
 				}
+
 			}
 
 		}
