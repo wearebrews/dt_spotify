@@ -1,10 +1,13 @@
 services:
 - docker
-branches:
-  only:
-  - master
 
 before_install:
 - source install.sh
 
-script: bash ./build.sh
+jobs:
+    include: 
+    - stage: build
+      script: bash ./build.sh
+    - stage: deploy
+      if: branch = master
+      script: bash ./deploy.sh
