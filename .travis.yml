@@ -1,5 +1,8 @@
 services:
 - docker
+branches:
+  only:
+  - master
 
 before_install:
 - source install.sh
