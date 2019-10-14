@@ -10,5 +10,7 @@ test_local: build
 
 docker:
 	docker build -t wearebrews/dtspotify:$(COMMIT) .
+	docker build -t wearebrews/dtspotify:latest .
 docker-push: docker
 	docker push wearebrews/dtspotify:$(COMMIT)
+	docker push wearebrews/dtspotify:latest

@@ -46,6 +46,7 @@ spec:
       containers:
       - name: dtspotify
         image: wearebrews/dtspotify
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:
