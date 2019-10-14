@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"os"
 
+	"io/ioutil"
+
 	"github.com/heptiolabs/healthcheck"
 	"github.com/sirupsen/logrus"
 	"github.com/wearebrews/dt_spotify/spotifyhelper"
-	"io/ioutil"
 )
 
 type SlackMessage struct {
