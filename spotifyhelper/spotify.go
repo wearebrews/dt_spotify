@@ -107,9 +107,10 @@ const (
 )
 
 type Controller struct {
-	cmd    chan int
-	song   chan string
-	health healthcheck.Handler
+	cmd      chan int
+	song     chan string
+	playlist chan string
+	health   healthcheck.Handler
 }
 
 func (c Controller) Play() {
@@ -132,11 +133,16 @@ func (c Controller) PlaySong(song string) {
 	c.song <- song
 }
 
+func (c Controller) PlayPlaylist(playlist string) {
+	c.playlist <- playlist
+}
+
 func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
-		cmd:    make(chan int),
-		song:   make(chan string),
-		health: health,
+		cmd:      make(chan int),
+		song:     make(chan string),
+		playlist: make(chan string),
+		health:   health,
 	}
 
 	go run(ctx, s.clientChan, temp)
@@ -187,6 +193,11 @@ func run(ctx context.Context, clientChan <-chan spotify.Client, c Controller) {
 			}
 		case song := <-c.song:
 			if err := client.PlayOpt(&spotify.PlayOptions{URIs: []spotify.URI{spotify.URI(song)}}); err != nil {
+				logrus.Panic(err)
+			}
+		case playlist := <-c.playlist:
+			playlistURI := spotify.URI(playlist)
+			if err := client.PlayOpt(&spotify.PlayOptions{PlaybackContext: &playlistURI}); err != nil {
 				logrus.Panic(err)
 			}
 		}

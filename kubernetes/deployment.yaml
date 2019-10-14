@@ -37,7 +37,7 @@ spec:
   selector:
     matchLabels:
       app: dt-spotify
-  replicas: 2
+  replicas: 1
   template:
     metadata:
       labels:

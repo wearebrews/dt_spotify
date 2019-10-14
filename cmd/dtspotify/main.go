@@ -140,6 +140,10 @@ func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller)
 					if event.Labels.Song != nil {
 						c.PlaySong(*event.Labels.Song)
 					}
+				case "play_playlist":
+					if event.Labels.Playlist != nil {
+						c.PlayPlaylist(*event.Labels.Playlist)
+					}
 				}
 
 			}
