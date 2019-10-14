@@ -9,8 +9,8 @@ test_local: build
 	python3 tools/local_testing/run.py
 
 docker:
-	docker build -t wearebrews/dtspotify:$(COMMIT) -f dockerfiles/dtspotify.dockerfile .
-	docker build -t wearebrews/dtspotify_init -f dockerfiles/dtspotify_init.dockerfile .
+	docker build -t wearebrews/dtspotify:$(COMMIT) .
+	docker build -t wearebrews/dtspotify .
 docker-push: docker
 	docker push wearebrews/dtspotify:$(COMMIT)
-	docker push wearebrews/dtspotify_init
+	docker push wearebrews/dtspotify
