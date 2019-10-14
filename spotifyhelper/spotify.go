@@ -49,7 +49,7 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 		if err != nil {
 			logrus.Panic(err)
 		}
-		_, err = client.Set("spotify_token", string(bytes), 40*time.Minute).Result()
+		_, err = client.Set("spotify_token", bytes, token.Expiry.Sub(time.Now())).Result()
 		if err != nil {
 			logrus.Panic(err)
 		}
@@ -65,12 +65,15 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 		if err != nil {
 			logrus.Panic(err)
 		}
+		isInit := true
+		timer := time.NewTimer(0)
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(10 * time.Second):
-				if client.TTL("spotify_token").Val() > 10*time.Second {
+			case <-timer.C:
+				timer.Reset(30 * time.Second)
+				if ttl, err := client.TTL("spotify_token").Result(); err == nil && ttl > 2*time.Minute {
 					tokenBytes, err := client.Get("spotify_token").Bytes()
 					if err != nil {
 						logrus.Panic(err)
@@ -82,9 +85,12 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 					}
 					spotifyClient := auth.NewClient(token)
 					c <- spotifyClient
-					close(init)
+					if isInit {
+						isInit = false
+						close(init)
+					}
 				} else {
-					logrus.Info("Token need refresh")
+					logrus.Panic("The token is about to expire!!!")
 				}
 			}
 		}

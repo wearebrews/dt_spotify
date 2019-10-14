@@ -44,33 +44,17 @@ spec:
         app: dt-spotify
     spec:
       initContainers:
-      - name: init
-        image: wearebrews/dtspotify_init
-        ports:
-        - containerPort: 8080
-        env:
-        - name: BASE_URL
-          value: "http://dtspotify.shapingideas.fyi"
-        - name: SPOTIFY_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: spotifyclient
-              key: id
-        - name: SPOTIFY_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: spotifyclient
-              key: secret
-        - name: SLACK_URL
-          valueFrom:
-            secretKeyRef:
-              name: slack
-              key: url
-        - name: HOST_PORT
-          value: "8080"
+      - name: init-redis-master
+        image: redis:4.0-alpine
+        command: ["redis-cli"]
+        args: ["-h", "redis-master", "ping"]
+      - name: init-redis-slave
+        image: redis:4.0-alpine
+        command: ["redis-cli"]
+        args: ["-h", "redis-slave", "ping"]
       containers:
       - name: dtspotify
-        image: wearebrews/dtspotify
+        image: wearebrews/dtspotify:dev
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
