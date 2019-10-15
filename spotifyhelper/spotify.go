@@ -2,13 +2,10 @@ package spotifyhelper
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"time"
 
 	"golang.org/x/oauth2"
 
-	"github.com/go-redis/redis"
 	"github.com/heptiolabs/healthcheck"
 	"github.com/rs/xid"
 	"github.com/sirupsen/logrus"
@@ -19,7 +16,7 @@ type Session struct {
 	auth      spotify.Authenticator
 	url       string
 	handler   http.HandlerFunc
-	UserToken <-chan oauth2.Token
+	tokenChan chan oauth2.Token
 	Init      <-chan struct{}
 }
 
@@ -36,35 +33,22 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 		token, err := auth.Token(sessionID, r)
 		if err != nil {
 			http.Error(w, "Was not able to get token", http.StatusNotFound)
+			return
 		}
-		client := redis.NewClient(&redis.Options{
-			Addr:     "redis-master:6379",
-			Password: "",
-			DB:       0,
-		})
-
-		var bytes []byte
-		bytes, err = json.Marshal(token)
-		if err != nil {
-			logrus.Panic(err)
-		}
-		_, err = client.Set("spotify_token", bytes, token.Expiry.Sub(time.Now())).Result()
-		if err != nil {
-			logrus.Panic(err)
-		}
-		//Send token if chan availabl
-		select {
-		case tokenChan <- *token:
-		default:
-		}
+		//Send token if chan available
+		tokenChan <- *token
 	}
 	return &Session{
 		auth:      auth,
 		url:       url,
 		handler:   handler,
-		UserToken: tokenChan,
+		tokenChan: tokenChan,
 		Init:      init,
 	}
+}
+
+func (s *Session) SetToken(token oauth2.Token) {
+	s.tokenChan <- token
 }
 
 const (
@@ -76,10 +60,12 @@ const (
 )
 
 type Controller struct {
-	cmd      chan int
-	song     chan string
-	playlist chan string
-	health   healthcheck.Handler
+	cmd          chan int
+	song         chan string
+	playlist     chan string
+	health       healthcheck.Handler
+	Ready        chan struct{}
+	CurrentToken chan oauth2.Token
 }
 
 func (c Controller) Play() {
@@ -106,24 +92,40 @@ func (c Controller) PlayPlaylist(playlist string) {
 	c.playlist <- playlist
 }
 
-func New(ctx context.Context, token *oauth2.Token, s *Session, health healthcheck.Handler) Controller {
+func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
-		cmd:      make(chan int),
-		song:     make(chan string),
-		playlist: make(chan string),
-		health:   health,
+		cmd:          make(chan int),
+		song:         make(chan string),
+		playlist:     make(chan string),
+		Ready:        make(chan struct{}),
+		CurrentToken: make(chan oauth2.Token),
+		health:       health,
 	}
 
-	go run(ctx, token, s.auth, temp)
+	go run(ctx, s, temp)
 	return temp
 }
 
-func run(ctx context.Context, token *oauth2.Token, auth spotify.Authenticator, c Controller) {
-	client := auth.NewClient(token)
+func run(ctx context.Context, session *Session, c Controller) {
+
+	initToken := <-session.tokenChan
+	client := session.auth.NewClient(&initToken)
+	logrus.Info("Initial token received, starting spotifyhelper")
+	//Signal ready
+	close(c.Ready)
 	for {
+		token, err := client.Token()
+		if err != nil {
+			logrus.Panic(err)
+		}
+
 		select {
 		case <-ctx.Done():
 			return
+		case token := <-session.tokenChan:
+			client = session.auth.NewClient(&token)
+		case c.CurrentToken <- *token:
+			//Send token when ready. NB: Might be OLD (unlikely)!
 		case cmd := <-c.cmd:
 			switch cmd {
 			case playCMD:

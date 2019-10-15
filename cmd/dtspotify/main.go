@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
 	"io/ioutil"
 
@@ -43,6 +44,15 @@ type DTEvent struct {
 
 var dtEvents chan DTEvent
 
+func postLoginURL(slackURL, loginURL string) {
+	//Ask user to login
+	jsonBytes, err := json.Marshal(SlackMessage{loginURL})
+	if err != nil {
+		logrus.Panic(err)
+	}
+	http.Post(slackURL, "application/json", bytes.NewBuffer(jsonBytes))
+}
+
 func main() {
 	//Load envs
 	spotifyClientID, ok := os.LookupEnv("SPOTIFY_CLIENT_ID")
@@ -70,17 +80,11 @@ func main() {
 	health := healthcheck.NewHandler()
 	logrus.Info(slackURL)
 
-	spotifyClientID = spotifyClientID[:len(spotifyClientID)-1]
-	spotifyClientSecret = spotifyClientSecret[:len(spotifyClientSecret)-1]
-	logrus.Info(spotifyClientID)
-	logrus.Info(spotifyClientSecret)
-
-	dtEvents = make(chan DTEvent)
-
 	loginPath := "/login"
 	redirectURL := baseURL + loginPath
 	//Create new session
 	session := spotifyhelper.NewSession(context.TODO(), spotifyClientID, spotifyClientSecret, redirectURL)
+	spotify := spotifyhelper.New(context.TODO(), session, health)
 	//Set up HTTP handler for login session
 	http.HandleFunc(loginPath, session.Handler())
 	//Send login url to start authentication
@@ -94,8 +98,6 @@ func main() {
 		DB:       0,
 	})
 
-	go http.ListenAndServe(":"+hostPort, nil)
-
 	var token oauth2.Token
 	rBytes, err := redisClient.Get("spotify_token").Bytes()
 	if err == nil {
@@ -104,23 +106,32 @@ func main() {
 		if err != nil {
 			logrus.Panic(err)
 		}
+		session.SetToken(token)
 	} else {
-		//Ask user to login
-		jsonBytes, err := json.Marshal(SlackMessage{session.LoginURL()})
-		if err != nil {
-			logrus.Panic(err)
-		}
-		http.Post(slackURL, "application/json", bytes.NewBuffer(jsonBytes))
-		session.LoginURL()
-		token = <-session.UserToken
+		postLoginURL(slackURL, session.LoginURL())
 	}
 
-	spotify := spotifyhelper.New(context.TODO(), &token, session, health)
+	//Refresh token frequently
+	go writeSpotifyTokenPeriodically(redisClient, spotify.CurrentToken, 5*time.Minute)
+
+	//Create channel for DT events
+	dtEvents = make(chan DTEvent)
 
 	//Start
 	ctx := context.Background()
 	go run(ctx, dtEvents, spotify)
-	http.ListenAndServe("0.0.0.0:8086", health)
+	go http.ListenAndServe("0.0.0.0:8086", health)
+	http.ListenAndServe(":"+hostPort, nil)
+}
+
+func writeSpotifyTokenPeriodically(client *redis.Client, tokenChan <-chan oauth2.Token, period time.Duration) {
+	for {
+		token := <-tokenChan
+		if err := client.Set("spotify_token", token, token.Expiry.Sub(time.Now())).Err(); err != nil {
+			logrus.Panic(err)
+		}
+		<-time.After(period)
+	}
 }
 
 func handleDTEvents(w http.ResponseWriter, r *http.Request) {
@@ -141,13 +152,25 @@ func handleDTEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller) {
-	logrus.Info("Application is READY!")
+	//Wait until spotify is READY
+	select {
+	case <-c.Ready:
+		break
+	case <-time.After(5 * time.Minute):
+		logrus.Panic("Spotify is not ready after 5 minutes")
+	}
+	logrus.Info("Application is ready for events")
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case event := <-dtEvents:
 			if event.Labels.Action != nil {
+				if logJSON, err := json.Marshal(event); err != nil {
+					logrus.Panic(err)
+				} else {
+					logrus.WithField("event", logJSON).Info("Processing event")
+				}
 				switch *event.Labels.Action {
 				case "play":
 					c.Play()
