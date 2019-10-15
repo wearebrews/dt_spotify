@@ -48,10 +48,6 @@ spec:
         image: redis:4.0-alpine
         command: ["redis-cli"]
         args: ["-h", "redis-master", "ping"]
-      - name: init-redis-slave
-        image: redis:4.0-alpine
-        command: ["redis-cli"]
-        args: ["-h", "redis-slave", "ping"]
       containers:
       - name: dtspotify
         image: wearebrews/dtspotify:dev

@@ -127,6 +127,7 @@ func main() {
 func writeSpotifyTokenPeriodically(client *redis.Client, tokenChan <-chan oauth2.Token, period time.Duration) {
 	for {
 		token := <-tokenChan
+		logrus.Info("Refreshing token in redis")
 		bytes, err := json.Marshal(token)
 		if err != nil {
 			logrus.Panic(err)
