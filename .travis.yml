@@ -12,3 +12,8 @@ jobs:
     - stage: build-and-deploy
       if: branch = master
       script: bash ./deploy.sh
+      
+notifications:
+  slack: wearebrews:50mQcDAynivWyxqZLCixX6YP
+  email: false
+      
