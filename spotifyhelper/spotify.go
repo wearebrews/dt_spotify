@@ -3,7 +3,6 @@ package spotifyhelper
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -17,11 +16,11 @@ import (
 )
 
 type Session struct {
-	auth       spotify.Authenticator
-	url        string
-	handler    http.HandlerFunc
-	clientChan <-chan spotify.Client
-	Init       <-chan struct{}
+	auth      spotify.Authenticator
+	url       string
+	handler   http.HandlerFunc
+	UserToken <-chan oauth2.Token
+	Init      <-chan struct{}
 }
 
 func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *Session {
@@ -30,7 +29,7 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 
 	sessionID := xid.New().String()
 	url := auth.AuthURL(sessionID)
-	c := make(chan spotify.Client)
+	tokenChan := make(chan oauth2.Token)
 	init := make(chan struct{})
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
@@ -53,54 +52,18 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 		if err != nil {
 			logrus.Panic(err)
 		}
+		//Send token if chan availabl
+		select {
+		case tokenChan <- *token:
+		default:
+		}
 	}
-
-	go func() {
-		client := redis.NewClient(&redis.Options{
-			Addr:     "redis-slave:6379",
-			Password: "",
-			DB:       0,
-		})
-		_, err := client.Ping().Result()
-		if err != nil {
-			logrus.Panic(err)
-		}
-		isInit := true
-		timer := time.NewTimer(0)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-				timer.Reset(30 * time.Second)
-				if ttl, err := client.TTL("spotify_token").Result(); err == nil && ttl > 2*time.Minute {
-					tokenBytes, err := client.Get("spotify_token").Bytes()
-					if err != nil {
-						logrus.Panic(err)
-					}
-					token := &oauth2.Token{}
-					err = json.Unmarshal(tokenBytes, token)
-					if err != nil {
-						logrus.Panic(err)
-					}
-					spotifyClient := auth.NewClient(token)
-					c <- spotifyClient
-					if isInit {
-						isInit = false
-						close(init)
-					}
-				} else {
-					logrus.Panic("The token is about to expire!!!")
-				}
-			}
-		}
-	}()
 	return &Session{
-		auth:       auth,
-		url:        url,
-		handler:    handler,
-		clientChan: c,
-		Init:       init,
+		auth:      auth,
+		url:       url,
+		handler:   handler,
+		UserToken: tokenChan,
+		Init:      init,
 	}
 }
 
@@ -143,7 +106,7 @@ func (c Controller) PlayPlaylist(playlist string) {
 	c.playlist <- playlist
 }
 
-func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
+func New(ctx context.Context, token *oauth2.Token, s *Session, health healthcheck.Handler) Controller {
 	temp := Controller{
 		cmd:      make(chan int),
 		song:     make(chan string),
@@ -151,25 +114,16 @@ func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller
 		health:   health,
 	}
 
-	go run(ctx, s.clientChan, temp)
+	go run(ctx, token, s.auth, temp)
 	return temp
 }
 
-func run(ctx context.Context, clientChan <-chan spotify.Client, c Controller) {
-	var client *spotify.Client
-	c.health.AddReadinessCheck("spotify client ready", func() error {
-		if client == nil {
-			return fmt.Errorf("No spotify client received")
-		}
-		return nil
-	})
-	temp := <-clientChan
-	client = &temp
+func run(ctx context.Context, token *oauth2.Token, auth spotify.Authenticator, c Controller) {
+	client := auth.NewClient(token)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case *client = <-clientChan:
 		case cmd := <-c.cmd:
 			switch cmd {
 			case playCMD:

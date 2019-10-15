@@ -9,9 +9,11 @@ import (
 
 	"io/ioutil"
 
+	"github.com/go-redis/redis"
 	"github.com/heptiolabs/healthcheck"
 	"github.com/sirupsen/logrus"
 	"github.com/wearebrews/dt_spotify/spotifyhelper"
+	"golang.org/x/oauth2"
 )
 
 type SlackMessage struct {
@@ -82,22 +84,43 @@ func main() {
 	//Set up HTTP handler for login session
 	http.HandleFunc(loginPath, session.Handler())
 	//Send login url to start authentication
-	jsonBytes, err := json.Marshal(SlackMessage{session.LoginURL()})
-	if err != nil {
-		logrus.Panic(err)
-	}
-	http.Post(slackURL, "application/json", bytes.NewBuffer(jsonBytes))
 
 	//Create DT handler
 	http.HandleFunc("/dtconn", handleDTEvents)
 
-	spotify := spotifyhelper.New(context.TODO(), session, health)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "redis-master:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	go http.ListenAndServe(":"+hostPort, nil)
+
+	var token oauth2.Token
+	rBytes, err := redisClient.Get("spotify_token").Bytes()
+	if err == nil {
+		//Load token from redis
+		err := json.Unmarshal(rBytes, &token)
+		if err != nil {
+			logrus.Panic(err)
+		}
+	} else {
+		//Ask user to login
+		jsonBytes, err := json.Marshal(SlackMessage{session.LoginURL()})
+		if err != nil {
+			logrus.Panic(err)
+		}
+		http.Post(slackURL, "application/json", bytes.NewBuffer(jsonBytes))
+		session.LoginURL()
+		token = <-session.UserToken
+	}
+
+	spotify := spotifyhelper.New(context.TODO(), &token, session, health)
 
 	//Start
 	ctx := context.Background()
 	go run(ctx, dtEvents, spotify)
-	go http.ListenAndServe("0.0.0.0:8086", health)
-	http.ListenAndServe(":"+hostPort, nil)
+	http.ListenAndServe("0.0.0.0:8086", health)
 }
 
 func handleDTEvents(w http.ResponseWriter, r *http.Request) {
