@@ -127,7 +127,11 @@ func main() {
 func writeSpotifyTokenPeriodically(client *redis.Client, tokenChan <-chan oauth2.Token, period time.Duration) {
 	for {
 		token := <-tokenChan
-		if err := client.Set("spotify_token", token, token.Expiry.Sub(time.Now())).Err(); err != nil {
+		bytes, err := json.Marshal(token)
+		if err != nil {
+			logrus.Panic(err)
+		}
+		if err := client.Set("spotify_token", bytes, token.Expiry.Sub(time.Now())).Err(); err != nil {
 			logrus.Panic(err)
 		}
 		<-time.After(period)
@@ -166,11 +170,7 @@ func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller)
 			return
 		case event := <-dtEvents:
 			if event.Labels.Action != nil {
-				if logJSON, err := json.Marshal(event); err != nil {
-					logrus.Panic(err)
-				} else {
-					logrus.WithField("event", logJSON).Info("Processing event")
-				}
+				logrus.WithField("event", event).Info("Processing event")
 				switch *event.Labels.Action {
 				case "play":
 					c.Play()
