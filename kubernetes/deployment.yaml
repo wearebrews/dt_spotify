@@ -37,16 +37,29 @@ spec:
   selector:
     matchLabels:
       app: dt-spotify
-  replicas: 1
+  replicas: 2
   template:
     metadata:
       labels:
         app: dt-spotify
     spec:
+      initContainers:
+      - name: init-redis-master
+        image: redis:4.0-alpine
+        command: ["redis-cli"]
+        args: ["-h", "redis-master", "ping"]
+      - name: init-redis-slave
+        image: redis:4.0-alpine
+        command: ["redis-cli"]
+        args: ["-h", "redis-slave", "ping"]
       containers:
       - name: dtspotify
-        image: wearebrews/dtspotify
+        image: wearebrews/dtspotify:dev
         imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
         ports:
         - containerPort: 8080
         env:
