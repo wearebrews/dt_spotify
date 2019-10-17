@@ -52,10 +52,6 @@ spec:
       - name: dtspotify
         image: wearebrews/dtspotify:dev
         imagePullPolicy: Always
-        resources:
-          requests:
-            memory: "50Mi"
-            cpu: "50m"
         ports:
         - containerPort: 8080
         env:
