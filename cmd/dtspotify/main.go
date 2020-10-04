@@ -10,6 +10,7 @@ import (
 
 	"io/ioutil"
 
+	logrusgce "github.com/PentoHQ/logrus-gce"
 	"github.com/go-redis/redis"
 	"github.com/heptiolabs/healthcheck"
 	"github.com/sirupsen/logrus"
@@ -54,6 +55,9 @@ func postLoginURL(slackURL, loginURL string) {
 }
 
 func main() {
+
+	logrus.SetFormatter(logrusgce.NewGCEFormatter(true))
+
 	//Load envs
 	spotifyClientID, ok := os.LookupEnv("SPOTIFY_CLIENT_ID")
 	if !ok {

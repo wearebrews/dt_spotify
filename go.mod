@@ -1,6 +1,7 @@
 module github.com/wearebrews/dt_spotify
 
 require (
+	github.com/PentoHQ/logrus-gce v0.0.0-20180511102947-d6f6f6d5ffa6
 	github.com/go-redis/redis v6.15.6+incompatible
 	github.com/heptiolabs/healthcheck v0.0.0-20180807145615-6ff867650f40
 	github.com/prometheus/client_golang v1.1.0 // indirect
