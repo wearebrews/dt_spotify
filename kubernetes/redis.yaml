@@ -15,6 +15,18 @@ spec:
     role: master
     tier: backend
 ---
+# pvc-demo.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-persistence
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
+---
 apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
 kind: Deployment
 metadata:
@@ -35,9 +47,17 @@ spec:
         role: master
         tier: backend
     spec:
+      volumes:
+      - name: volume-claim
+        persistentVolumeClaim: 
+          claimName: redis-persistence
       containers:
       - name: master
-        image: redis:4.0-alpine
+        image: redis:6-alpine
+        command: ["redis-server", "--appendonly", "yes"]
+        volumeMounts:
+        - name: volume-claim
+          mountPath: "/data"
         resources:
           requests:
             cpu: 25m
