@@ -3,6 +3,7 @@ package spotifyhelper
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"golang.org/x/oauth2"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/zmb3/spotify"
 )
 
+// Session contains a spotify session with oauth handler
 type Session struct {
 	auth      spotify.Authenticator
 	url       string
@@ -20,6 +22,22 @@ type Session struct {
 	Init      <-chan struct{}
 }
 
+// Handler returns http handler for oauth tokens
+func (s *Session) Handler() http.HandlerFunc {
+	return s.handler
+}
+
+// LoginURL returns a login url for spotify user login
+func (s *Session) LoginURL() string {
+	return s.url
+}
+
+// SetToken allows an external token to be loaded
+func (s *Session) SetToken(token oauth2.Token) {
+	s.tokenChan <- token
+}
+
+// NewSession creates a new session
 func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *Session {
 	auth := spotify.NewAuthenticator(redirectURL, spotify.ScopeUserReadCurrentlyPlaying, spotify.ScopeUserReadPlaybackState, spotify.ScopeUserModifyPlaybackState)
 	auth.SetAuthInfo(clientID, secretKey)
@@ -47,10 +65,6 @@ func NewSession(ctx context.Context, clientID, secretKey, redirectURL string) *S
 	}
 }
 
-func (s *Session) SetToken(token oauth2.Token) {
-	s.tokenChan <- token
-}
-
 const (
 	playCMD = iota
 	pauseCMD
@@ -59,54 +73,77 @@ const (
 	prevSongCMD
 )
 
-type Controller struct {
+// Controller contains valid spotify actions
+type Controller interface {
+	Play()
+	Pause()
+	Toggle()
+	NextSong()
+	PrevSong()
+	PlaySong(song string)
+	PlayPlaylist(playlist string)
+	Token() oauth2.Token
+}
+
+type controller struct {
 	cmd          chan int
 	song         chan string
 	playlist     chan string
 	health       healthcheck.Handler
 	Ready        chan struct{}
-	CurrentToken chan oauth2.Token
+	currentToken chan oauth2.Token
 }
 
-func (c Controller) Play() {
+func (c controller) Token() oauth2.Token {
+	return <-c.currentToken
+}
+
+func (c controller) Play() {
 	c.cmd <- playCMD
 }
-func (c Controller) Pause() {
+func (c controller) Pause() {
 	c.cmd <- pauseCMD
 }
-func (c Controller) Toggle() {
+func (c controller) Toggle() {
 	c.cmd <- toggleCMD
 }
-func (c Controller) NextSong() {
+func (c controller) NextSong() {
 	c.cmd <- nextSongCMD
 }
 
-func (c Controller) PrevSong() {
+func (c controller) PrevSong() {
 	c.cmd <- prevSongCMD
 }
-func (c Controller) PlaySong(song string) {
+func (c controller) PlaySong(song string) {
 	c.song <- song
 }
 
-func (c Controller) PlayPlaylist(playlist string) {
+func (c controller) PlayPlaylist(playlist string) {
 	c.playlist <- playlist
 }
 
+// New creates a new spotify controller from a session
 func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
-	temp := Controller{
+	temp := controller{
 		cmd:          make(chan int),
 		song:         make(chan string),
 		playlist:     make(chan string),
 		Ready:        make(chan struct{}),
-		CurrentToken: make(chan oauth2.Token),
+		currentToken: make(chan oauth2.Token),
 		health:       health,
 	}
 
 	go run(ctx, s, temp)
+	select {
+	case <-time.After(5 * time.Minute):
+		logrus.Panic("No token received after 5 minutes")
+	case <-temp.Ready:
+		break
+	}
 	return temp
 }
 
-func run(ctx context.Context, session *Session, c Controller) {
+func run(ctx context.Context, session *Session, c controller) {
 
 	initToken := <-session.tokenChan
 	client := session.auth.NewClient(&initToken)
@@ -124,52 +161,50 @@ func run(ctx context.Context, session *Session, c Controller) {
 			return
 		case token := <-session.tokenChan:
 			client = session.auth.NewClient(&token)
-		case c.CurrentToken <- *token:
+		case c.currentToken <- *token:
 			//Send token when ready. NB: Might be OLD (unlikely)!
 		case cmd := <-c.cmd:
 			switch cmd {
 			case playCMD:
 				if err := client.Play(); err != nil {
-					logrus.Info(err)
+					logrus.Error(err)
 				}
 			case pauseCMD:
 				if err := client.Pause(); err != nil {
-					logrus.Info(err)
+					logrus.Error(err)
 				}
 			case toggleCMD:
 				state, err := client.PlayerState()
 				if err != nil {
-					logrus.Panic(err)
+					logrus.Error(err)
+					continue
 				}
 				if state.Playing {
 					if err := client.Pause(); err != nil {
-						logrus.Panic(err)
+						logrus.Error(err)
 					}
 				} else {
-					client.Play()
+					if err := client.Play(); err != nil {
+						logrus.Error(err)
+					}
+
 				}
 			case nextSongCMD:
-				client.Next()
+				if err := client.Next(); err != nil {
+					logrus.Error(err)
+				}
 			case prevSongCMD:
 				client.Previous()
 			}
 		case song := <-c.song:
 			if err := client.PlayOpt(&spotify.PlayOptions{URIs: []spotify.URI{spotify.URI(song)}}); err != nil {
-				logrus.Panic(err)
+				logrus.Error(err)
 			}
 		case playlist := <-c.playlist:
 			playlistURI := spotify.URI(playlist)
 			if err := client.PlayOpt(&spotify.PlayOptions{PlaybackContext: &playlistURI}); err != nil {
-				logrus.Panic(err)
+				logrus.Error(err)
 			}
 		}
 	}
-}
-
-func (s *Session) Handler() http.HandlerFunc {
-	return s.handler
-}
-
-func (s *Session) LoginURL() string {
-	return s.url
 }

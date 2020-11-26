@@ -116,7 +116,7 @@ func main() {
 	}
 
 	//Refresh token frequently
-	go writeSpotifyTokenPeriodically(redisClient, spotify.CurrentToken, 5*time.Minute)
+	go writeSpotifyTokenPeriodically(redisClient, spotify, 5*time.Minute)
 
 	//Create channel for DT events
 	dtEvents = make(chan DTEvent)
@@ -128,9 +128,9 @@ func main() {
 	http.ListenAndServe(":"+hostPort, nil)
 }
 
-func writeSpotifyTokenPeriodically(client *redis.Client, tokenChan <-chan oauth2.Token, period time.Duration) {
+func writeSpotifyTokenPeriodically(client *redis.Client, spotify spotifyhelper.Controller, period time.Duration) {
 	for {
-		token := <-tokenChan
+		token := spotify.Token()
 		logrus.WithField("token", token).Info("Refreshing token in redis")
 		bytes, err := json.Marshal(token)
 		if err != nil {
@@ -162,12 +162,6 @@ func handleDTEvents(w http.ResponseWriter, r *http.Request) {
 
 func run(ctx context.Context, dtEvents chan DTEvent, c spotifyhelper.Controller) {
 	//Wait until spotify is READY
-	select {
-	case <-c.Ready:
-		break
-	case <-time.After(5 * time.Minute):
-		logrus.Panic("Spotify is not ready after 5 minutes")
-	}
 	logrus.Info("Application is ready for events")
 	for {
 		select {
