@@ -3,7 +3,6 @@ package spotifyhelper
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"golang.org/x/oauth2"
 
@@ -83,6 +82,7 @@ type Controller interface {
 	PlaySong(song string)
 	PlayPlaylist(playlist string)
 	Token() oauth2.Token
+	Ready() <-chan struct{}
 }
 
 type controller struct {
@@ -90,7 +90,7 @@ type controller struct {
 	song         chan string
 	playlist     chan string
 	health       healthcheck.Handler
-	Ready        chan struct{}
+	ready        chan struct{}
 	currentToken chan oauth2.Token
 }
 
@@ -122,24 +122,22 @@ func (c controller) PlayPlaylist(playlist string) {
 	c.playlist <- playlist
 }
 
+func (c controller) Ready() <-chan struct{} {
+	return c.ready
+}
+
 // New creates a new spotify controller from a session
 func New(ctx context.Context, s *Session, health healthcheck.Handler) Controller {
 	temp := controller{
 		cmd:          make(chan int),
 		song:         make(chan string),
 		playlist:     make(chan string),
-		Ready:        make(chan struct{}),
+		ready:        make(chan struct{}),
 		currentToken: make(chan oauth2.Token),
 		health:       health,
 	}
 
 	go run(ctx, s, temp)
-	select {
-	case <-time.After(5 * time.Minute):
-		logrus.Panic("No token received after 5 minutes")
-	case <-temp.Ready:
-		break
-	}
 	return temp
 }
 
@@ -149,7 +147,7 @@ func run(ctx context.Context, session *Session, c controller) {
 	client := session.auth.NewClient(&initToken)
 	logrus.Info("Initial token received, starting spotifyhelper")
 	//Signal ready
-	close(c.Ready)
+	close(c.ready)
 	for {
 		token, err := client.Token()
 		if err != nil {

@@ -89,6 +89,17 @@ func main() {
 	//Create new session
 	session := spotifyhelper.NewSession(context.TODO(), spotifyClientID, spotifyClientSecret, redirectURL)
 	spotify := spotifyhelper.New(context.TODO(), session, health)
+
+	// Kill application if stuck
+	go func() {
+		select {
+		case <-time.After(5 * time.Minute):
+			logrus.Panic("No token received after 5 minutes")
+		case <-spotify.Ready():
+			break
+		}
+	}()
+
 	//Set up HTTP handler for login session
 	http.HandleFunc(loginPath, session.Handler())
 	//Send login url to start authentication
